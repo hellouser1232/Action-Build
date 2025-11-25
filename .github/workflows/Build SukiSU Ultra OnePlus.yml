@@ -1,11 +1,10 @@
-name: 构建一加 SukiSU Ultra 内核
-
+name: 构建一加SukiSU Ultra内核
 on:
   workflow_dispatch:
     inputs:
-      FILE:
+      配置文件:
         type: choice
-        description: "选择设备配置文件"
+        description: "选择要构建的设备配置文件"
         required: true
         default: oneplus_ace2_pro_v
         options:
@@ -43,51 +42,51 @@ on:
           - oneplus_ace5_ultra
           - oneplus_ace_6
           - oneplus_15
-      SUSFS_CI:
+      SUSFS模块下载方式:
         type: choice
-        description: "SUSFS模块下载方式"
+        description: "下载SUSFS模块的调用方式"
         required: true
         default: NoN
         options:
           - CI
           - Release
           - NoN
-      KSU_META:
+      分支和版本设置:
         type: string
-        description: "分支名(必填)/自定义版本标识(可选)/调整提交hash(可选)"
+        description: "分支名(必填)/自定义版本标识(留空不修改)/调整提交hash(留空不修改)"
         required: false
         default: "susfs-main/Numbersf/"
-      BUILD_TIME:
+      构建时间:
         type: string
         description: "自定义构建时间(输入F使用当前UTC时间)"
         required: false
         default: "Mon Aug 18 09:30:24 UTC 2025"
-      SUFFIX:
+      内核后缀:
         type: string
-        description: "自定义内核后缀(留空使用随机字符串)"
+        description: "自定义内核后缀(不输入使用随机字符串)"
         required: false
         default: ""
-      FAST_BUILD:
+      极速构建:
         type: boolean
         description: "是否启用极速构建？"
         required: true
         default: true
-      KPM:
+      内核模块:
         type: boolean
         description: "是否启用内核模块(KPM)？"
         required: true
         default: true
-      LSM:
+      分区保护:
         type: boolean
-        description: "是否启用基带保护模块(BBG)？"
+        description: "是否启用关键分区写入保护模块(BBG)？"
         required: true
         default: true
-      SCHED:
+      风驰驱动:
         type: boolean
-        description: "是否添加风驰调度器？"
+        description: "是否添加风驰驱动1.0？"
         required: true
         default: false
-      ZRAM:
+      ZRAM算法:
         type: boolean
         description: "是否添加更多ZRAM算法？"
         required: true
@@ -95,20 +94,17 @@ on:
 
 jobs:
   构建内核:
-    name: ${{ github.event.inputs.FAST_BUILD == 'true' && ' [极速]' || '' }}${{ github.event.inputs.KPM == 'true' && ' [KPM]' || '' }}${{ github.event.inputs.LSM == 'true' && ' [基带保护]' || '' }}${{ github.event.inputs.SCHED == 'true' && ' [风驰调度]' || '' }}${{ github.event.inputs.ZRAM == 'true' && ' [ZRAM]' || '' }}设备: ${{ github.event.inputs.FILE }} ${{ github.event.inputs.SUFFIX }}
+    name: ${{ github.event.inputs.极速构建 == 'true' && ' [极速构建]' || '' }}${{ github.event.inputs.内核模块 == 'true' && ' [KPM模块]' || '' }}${{ github.event.inputs.分区保护 == 'true' && ' [分区保护]' || '' }}${{ github.event.inputs.风驰驱动 == 'true' && ' [风驰驱动]' || '' }}${{ github.event.inputs.ZRAM算法 == 'true' && ' [ZRAM算法]' || '' }}设备: ${{ github.event.inputs.配置文件 }} ${{ github.event.inputs.内核后缀 }}
     runs-on: ubuntu-latest
     env:
       CCACHE_COMPILERCHECK: "%compiler% -dumpmachine; %compiler% -dumpversion"
       CCACHE_NOHASHDIR: "true"
       CCACHE_HARDLINK: "true"
       CCACHE_MAXSIZE: 8G
-    
     steps:
-      # 步骤1: 检出代码
       - name: 检出代码
         uses: actions/checkout@v4
 
-      # 步骤2: 最大化构建空间
       - name: 最大化构建空间
         uses: easimon/maximize-build-space@master
         with:
@@ -119,57 +115,51 @@ jobs:
           remove-haskell: 'true'
           remove-codeql: 'true'
 
-      # 步骤3: 提取清单信息
       - name: 提取清单信息
         id: 提取信息
         env:
-          文件: ${{ github.event.inputs.FILE }}
+          配置文件: ${{ github.event.inputs.配置文件 }}
         run: |
           set -e
           cd "$GITHUB_WORKSPACE"
-          
-          # 处理文件名
-          if [[ "$文件" =~ ^(.+)_([a-zA-Z])$ ]]; then
-            文件配置="${BASH_REMATCH[1]}"
+          if [[ "$配置文件" =~ ^(.+)_([a-zA-Z])$ ]]; then
+            配置文件_精简="${BASH_REMATCH[1]}"
           else
-            文件配置="$文件"
+            配置文件_精简="$配置文件"
           fi
-          
-          文件基础=$(echo "$文件配置" | sed -E 's/_([a-zA-Z0-9])/\U\1/g; s/^oneplus/OnePlus/; s/^realme/Realme/; s/^oppo/Oppo/')
+          设备基名=$(echo "$配置文件_精简" | sed -E 's/_([a-zA-Z0-9])/\U\1/g; s/^oneplus/OnePlus/; s/^realme/Realme/; s/^oppo/Oppo/')
           mkdir -p ".repo/manifests_fallback"
-          清单路径=".repo/manifests_fallback/${文件}.xml"
-          说明路径=".repo/manifests_fallback/README.md"
-          
-          echo "处理文件: 文件=$文件, 配置=$文件配置, 基础=$文件基础"
-          echo "文件配置=$文件配置" >> $GITHUB_ENV
-          echo "文件基础=$文件基础" >> $GITHUB_ENV
+          清单路径=".repo/manifests_fallback/${配置文件}.xml"
+          说明文件路径=".repo/manifests_fallback/README.md"
+          echo "处理 配置文件=$配置文件, 精简=$配置文件_精简, 基名=$设备基名"
+          echo "配置文件_精简=$配置文件_精简" >> $GITHUB_ENV
+          echo "设备基名=$设备基名" >> $GITHUB_ENV
 
-          # 定义仓库源
-          declare -A 仓库
-          仓库["OnePlusOSS"]="https://api.github.com/repos/OnePlusOSS/kernel_manifest"
-          仓库["Dynamic"]="https://api.github.com/repos/Numbersf/kernel_manifest"
+          # 动态调用源码清单仓库，仓库优先级：1️⃣ OnePlusOSS → 2️⃣ Numbersf(可替换)
+          declare -A 仓库列表
+          仓库列表["OnePlusOSS"]="https://api.github.com/repos/OnePlusOSS/kernel_manifest"
+          仓库列表["Dynamic"]="https://api.github.com/repos/Numbersf/kernel_manifest"
 
           找到的仓库=""
           找到的分支=""
 
-          # 检查仓库函数
           检查仓库() {
             local 所有者=$1
             local 仓库URL=$2
 
-            echo "🌐 正在检查 ${所有者} 的分支列表..."
+            echo "🌐 尝试拉取 ${所有者} 分支列表..."
             分支列表=$(curl -s ${仓库URL}/branches | jq -r '.[].name' || true)
             if [[ -z "$分支列表" ]]; then
-              echo "⚠️ 无法获取 ${所有者} 的分支列表，跳过"
+              echo "⚠️ ${所有者} 分支列表获取失败，跳过。"
               return 1
             fi
             for 分支 in $分支列表; do
-              清单URL="https://raw.githubusercontent.com/${所有者}/kernel_manifest/$分支/${文件}.xml"
-              说明URL="https://raw.githubusercontent.com/${所有者}/kernel_manifest/$分支/README.md"
+              清单URL="https://raw.githubusercontent.com/${所有者}/kernel_manifest/$分支/${配置文件}.xml"
+              说明文件URL="https://raw.githubusercontent.com/${所有者}/kernel_manifest/$分支/README.md"
               if curl -sf --head "$清单URL" > /dev/null; then
-                echo "✅ 在 ${所有者} 找到 ${文件}.xml (分支: $分支)"
+                echo "✅ 在 ${所有者} 找到 ${配置文件}.xml (分支: $分支)"
                 curl -s -o "$清单路径" "$清单URL"
-                curl -s -o "$说明路径" "$说明URL" || true
+                curl -s -o "$说明文件路径" "$说明文件URL" || true
                 找到的仓库="$所有者"
                 找到的分支="$分支"
                 return 0
@@ -178,15 +168,15 @@ jobs:
             return 1
           }
 
-          # 优先检查 OnePlusOSS 仓库
-          if 检查仓库 "OnePlusOSS" "${仓库["OnePlusOSS"]}"; then
+          # 首先尝试默认仓库
+          if 检查仓库 "OnePlusOSS" "${仓库列表["OnePlusOSS"]}"; then
             echo "清单仓库=OnePlusOSS" >> $GITHUB_ENV
             echo "清单分支=$找到的分支" >> $GITHUB_ENV
           fi
 
-          # 回退到动态仓库
+          # 然后尝试动态仓库
           if [[ -z "$找到的仓库" ]]; then
-            动态URL="${仓库["Dynamic"]}"
+            动态URL="${仓库列表["Dynamic"]}"
             动态所有者=$(echo "$动态URL" | sed -E 's#https://api.github.com/repos/([^/]+)/.*#\1#')
             if 检查仓库 "$动态所有者" "$动态URL"; then
               echo "清单仓库=$动态所有者" >> $GITHUB_ENV
@@ -194,36 +184,32 @@ jobs:
             fi
           fi
 
-          # 检查是否找到清单文件
           if [[ -z "$找到的仓库" || ! -s "$清单路径" ]]; then
-            echo "❌ 无法在任何仓库中找到 ${文件}.xml"
+            echo "❌ 无法在动态仓库中找到 ${配置文件}.xml"
             exit 1
           fi
 
-          # 解析修订版本信息
+          # 解析 revision 字符串
           修订版本=$(grep -oP '<project[^>]+revision="\K[^"]+' "$清单路径" | head -n1 || true)
-          echo "解析文件获取 CPU 和 Android 版本..."
-          
-          # 提取 CPU 类型
-          CPU=$(echo "$修订版本" | sed -E 's#^(oneplus|realme|oppo)/([^_]+).*#\2#')
-          # 提取 Android 版本
+          echo "解析配置文件获取CPU和安卓版本..."
+          # 提取CPU类型
+          CPU类型=$(echo "$修订版本" | sed -E 's#^(oneplus|realme|oppo)/([^_]+).*#\2#')
+          # 提取安卓版本
           安卓版本=$(echo "$修订版本" | grep -oP '\d{1,2}\.\d{1,2}(\.\d{1,2})?')
-          
-          if [[ -n "$CPU" && -n "$安卓版本" ]]; then
-            echo "✅ CPU=$CPU, 安卓版本=$安卓版本"
-            echo "CPU=$CPU" >> $GITHUB_ENV
+          if [[ -n "$CPU类型" && -n "$安卓版本" ]]; then
+            echo "✅ CPU类型=$CPU类型, 安卓版本=$安卓版本"
+            echo "CPU类型=$CPU类型" >> $GITHUB_ENV
             echo "安卓版本=$安卓版本" >> $GITHUB_ENV
-            # 获取短版本号
+            # 获取短位安卓版本号
             echo "安卓短版本=${安卓版本%%.*}" >> $GITHUB_ENV
           else
-            echo "❌ 无法从修订版本中提取 CPU 或 Android 版本"
+            echo "❌ 无法从revision中提取CPU类型或安卓版本"
             exit 1
           fi
 
-          # 解析 README.md 获取构建信息
-          echo "解析 README.md 获取 CPUD 和构建方法..."
-          if [[ -s "$说明路径" ]]; then
-            构建行=$(grep -m1 'oplus_build_kernel.sh' "$说明路径" || true)
+          echo "解析README.md获取CPUD和构建方法..."
+          if [[ -s "$说明文件路径" ]]; then
+            构建行=$(grep -m1 'oplus_build_kernel.sh' "$说明文件路径" || true)
             if [[ -n "$构建行" ]]; then
               CPUD=$(echo "$构建行" | awk '{print $(NF-1)}')
               构建方法=$(echo "$构建行" | awk '{print $NF}')
@@ -231,45 +217,41 @@ jobs:
               echo "CPUD=$CPUD" >> $GITHUB_ENV
               echo "构建方法=$构建方法" >> $GITHUB_ENV
             else
-              echo "❌ README.md 中未找到构建命令"
+              echo "❌ README.md中未找到构建命令"
             fi
           else
-            echo "❌ README.md 下载失败或为空"
+            echo "❌ README.md下载失败或为空"
           fi
-          
-          # 输出组合信息
-          echo "value=${文件基础}_Android${安卓版本}" >> "$GITHUB_OUTPUT"
+          # 传递组合信息
+          echo "value=${设备基名}_安卓${安卓版本}" >> "$GITHUB_OUTPUT"
 
-      # 步骤4: 调试信息显示
-      - name: 显示调试信息
+      - name: 调试显示选择的输入
         run: |
           echo "-----------------------"
-          echo "选择的 CPU: ${{ env.CPU }}"
-          echo "选择的 CPUD: ${{ env.CPUD }}"
-          echo "选择的 Android 版本: ${{ env.安卓版本 }}"
+          echo "选择的CPU: ${{ env.CPU类型 }}"
+          echo "选择的CPUD: ${{ env.CPUD }}"
+          echo "选择的安卓版本: ${{ env.安卓版本 }}"
           echo "选择的构建方法: ${{ env.构建方法 }}"
-          echo "选择的文件: ${{ github.event.inputs.FILE }}"
-          echo "自定义 KSU_META: ${{ github.event.inputs.KSU_META }}"
-          echo "自定义构建时间: ${{ github.event.inputs.BUILD_TIME }}"
-          echo -n "构建时间 Unicode: "
-          python3 -c "print(''.join(f'U+{ord(c):04X} ' for c in '''${{ github.event.inputs.BUILD_TIME }}'''))"
-          echo "自定义后缀: ${{ github.event.inputs.SUFFIX }}"
-          echo -n "后缀 Unicode: "
-          python3 -c "print(''.join(f'U+{ord(c):04X} ' for c in '''${{ github.event.inputs.SUFFIX }}'''))"
-          echo "选择的 SUSFS_CI: ${{ github.event.inputs.SUSFS_CI }}"
-          echo "选择的 LSM: ${{ github.event.inputs.LSM }}"
-          echo "选择的 KPM: ${{ github.event.inputs.KPM }}"
-          echo "选择的极速构建: ${{ github.event.inputs.FAST_BUILD }}"
-          echo "选择的调度器: ${{ github.event.inputs.SCHED }}"
-          echo "选择的 ZRAM: ${{ github.event.inputs.ZRAM }}"
+          echo "选择的配置文件: ${{ github.event.inputs.配置文件 }}"
+          echo "自定义分支版本设置: ${{ github.event.inputs.分支和版本设置 }}"
+          echo "自定义构建时间: ${{ github.event.inputs.构建时间 }}"
+          echo -n "构建时间Unicode编码: "
+          python3 -c "print(''.join(f'U+{ord(c):04X} ' for c in '''${{ github.event.inputs.构建时间 }}'''))"
+          echo "自定义内核后缀: ${{ github.event.inputs.内核后缀 }}"
+          echo -n "内核后缀Unicode编码: "
+          python3 -c "print(''.join(f'U+{ord(c):04X} ' for c in '''${{ github.event.inputs.内核后缀 }}'''))"
+          echo "选择的SUSFS模块下载方式: ${{ github.event.inputs.SUSFS模块下载方式 }}"
+          echo "选择的分区保护: ${{ github.event.inputs.分区保护 }}"
+          echo "选择的内核模块: ${{ github.event.inputs.内核模块 }}"
+          echo "选择的极速构建: ${{ github.event.inputs.极速构建 }}"
+          echo "选择的风驰驱动: ${{ github.event.inputs.风驰驱动 }}"
+          echo "选择的ZRAM算法: ${{ github.event.inputs.ZRAM算法 }}"
           echo "-----------------------"
 
-      # 步骤5: 检查磁盘空间
       - name: 检查磁盘空间
         run: df -h
 
-      # 步骤6: 创建交换文件
-      - name: 创建3G交换文件
+      - name: 创建并启用3G交换空间
         run: |
           sudo swapoff -a
           sudo fallocate -l 3G /swapfile
@@ -278,41 +260,36 @@ jobs:
           sudo swapon /swapfile
           free -h
 
-      # 步骤7: 设置缓存环境
       - name: 设置缓存环境
         run: |
-          echo "CCACHE_DIR=$HOME/.ccache_${{ github.event.inputs.FILE }}" >> $GITHUB_ENV
-          mkdir -p "$HOME/.ccache_${{ github.event.inputs.FILE }}"
-          echo "设置缓存目录: $HOME/.ccache_${{ github.event.inputs.FILE }}"
+          echo "CCACHE目录=$HOME/.ccache_${{ github.event.inputs.配置文件 }}" >> $GITHUB_ENV
+          mkdir -p "$HOME/.ccache_${{ github.event.inputs.配置文件 }}"
+          echo "设置: $HOME/.ccache_${{ github.event.inputs.配置文件 }}"
 
-      # 步骤8: 配置Git
       - name: 配置Git
         run: |
           git config --global user.name "Numbersf"
           git config --global user.email "263623064@qq.com"
 
-      # 步骤9: 安装依赖
-      - name: 安装构建依赖
+      - name: 安装依赖 + APTC
         uses: awalsh128/cache-apt-pkgs-action@latest 
         with: 
           packages: python3 git curl ccache libelf-dev build-essential flex bison libssl-dev libncurses-dev liblz4-tool zlib1g-dev libxml2-utils rsync unzip gawk dos2unix
           execute_install_scripts: true
 
-      # 步骤10: 恢复ccache缓存
-      - name: 恢复ccache缓存
+      - name: 恢复Ccache缓存
         uses: actions/cache@v3
         with:
-          path: ${{ env.CCACHE_DIR }}
-          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.FILE }}-${{ env.构建方法 }}-${{ github.event.inputs.FAST_BUILD == 'true' && 'alpha' || 'beta' }}-16
+          path: ${{ env.CCACHE目录 }}
+          key: ccache-${{ runner.os }}-${{ github.ref_name }}-${{ github.event.inputs.配置文件 }}-${{ env.构建方法 }}-${{ github.event.inputs.极速构建 == 'true' && 'alpha' || 'beta' }}-16
 
-      # 步骤11: 初始化ccache
-      - name: 初始化ccache
+      - name: 初始化Ccache
         run: |
-          初始化标志="${{ env.CCACHE_DIR }}/.ccache_initialized"
+          初始化标志="${{ env.CCACHE目录 }}/.ccache_initialized"
           if command -v ccache >/dev/null 2>&1; then
             if [ ! -f "$初始化标志" ]; then
-              echo "正在初始化 ccache (${{ env.CCACHE_DIR }})..."
-              mkdir -p "${{ env.CCACHE_DIR }}"
+              echo "初始化 ccache (${{ env.CCACHE目录 }})..."
+              mkdir -p "${{ env.CCACHE目录 }}"
               ccache -M ${{ env.CCACHE_MAXSIZE }}
               touch "$初始化标志"
               echo "✅ ccache 初始化完成"
@@ -324,47 +301,43 @@ jobs:
           fi
           ccache -s
 
-      # 步骤12: 安装repo工具
-      - name: 安装repo工具
+      - name: 安装Repo工具
         run: |
           curl https://storage.googleapis.com/git-repo-downloads/repo > ~/repo
           chmod a+x ~/repo
           sudo mv ~/repo /usr/local/bin/repo
 
-      # 步骤13: 初始化repo并同步代码
-      - name: 初始化repo并同步代码
+      - name: 初始化Repo并同步代码
         env:
-          文件: ${{ github.event.inputs.FILE }}
+          配置文件: ${{ github.event.inputs.配置文件 }}
         run: |
           mkdir 内核工作区 && cd 内核工作区
           mkdir -p .repo/manifests
-          cp "$GITHUB_WORKSPACE/.repo/manifests_fallback/${文件}.xml" ".repo/manifests/${文件}.xml"
+          cp "$GITHUB_WORKSPACE/.repo/manifests_fallback/${配置文件}.xml" ".repo/manifests/${配置文件}.xml"
 
           清单仓库="${{ env.清单仓库 }}"
           清单分支="${{ env.清单分支 }}"
-          CPU="${{ env.CPU }}"
+          CPU类型="${{ env.CPU类型 }}"
           echo "清单仓库=$清单仓库"
           echo "清单分支=$清单分支"
 
           基础URL="https://github.com/${清单仓库}/kernel_manifest.git"
 
           echo "使用 $清单仓库 的分支 $清单分支 初始化仓库..."
-          repo init -u "$基础URL" -b "$清单分支" -m "${文件}.xml" --depth=1 --no-clone-bundle --no-tags
+          repo init -u "$基础URL" -b "$清单分支" -m "${配置文件}.xml" --depth=1 --no-clone-bundle --no-tags
           repo sync -c -j$(nproc) --no-clone-bundle --no-tags --force-sync
 
-          # 修复构建配置
           for 目录 in kernel_platform/common kernel_platform/msm-kernel; do
             if [ -e "$目录/BUILD.bazel" ]; then
               sed -i '/^[[:space:]]*"protected_exports_list"[[:space:]]*:[[:space:]]*"android\/abi_gki_protected_exports_aarch64",$/d' "$目录/BUILD.bazel"
             fi
-            rm -f "$目录/android/abi_gki_protected_exports_"* 2>/dev/null || echo "目录 $目录 中没有受保护的导出文件"
+            rm -f "$目录/android/abi_gki_protected_exports_"* 2>/dev/null || echo "No protected exports in $目录"
           done
 
-      # 步骤14: 内核版本处理
       - name: 内核版本处理
         run: |
           cd 内核工作区/kernel_platform
-          # 获取内核Android版本和内核版本
+          # 获取内核安卓版本号(内核安卓版本)以及内核版本号(内核版本)
           for 文件 in ./common/build.config.constants ./common/build.config.common; do
             if [ -f "$文件" ]; then
               分支=$(grep -m1 '^BRANCH=' "$文件" | cut -d= -f2)
@@ -379,31 +352,31 @@ jobs:
             echo "在build.config文件中未找到BRANCH"
           fi
 
-          # 从Makefile获取完整内核版本
+          # 从Makefile获取完整内核版本号(完整内核版本)以及可选的修改内核等级
           原始版本=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)
 
-          # 强制修改SUBLEVEL（默认关闭）
+          # 强制修改SUBLEVEL(内核等级)，默认关闭
           # sed -i 's/^SUBLEVEL[[:space:]]*=[[:space:]]*.*/SUBLEVEL = 99/' ./common/Makefile
 
           # 读取修改后的版本
           新版本=$(awk '/^VERSION =/ {v=$3} /^PATCHLEVEL =/ {p=$3} /^SUBLEVEL =/ {s=$3} END {print v"."p"."s}' ./common/Makefile)
 
           if [ "$原始版本" != "$新版本" ]; then
-            echo "内核版本: $原始版本 -> $新版本"
+            echo "内核版本:$原始版本->$新版本"
             echo "完整内核版本=$新版本" >> $GITHUB_ENV
           else
-            echo "内核版本: $原始版本 无变化"
+            echo "内核版本:$原始版本 无变化"
             echo "完整内核版本=$原始版本" >> $GITHUB_ENV
           fi
 
-      # 步骤15: 自定义内核后缀（如果设置了）
-      - name: 自定义内核后缀
-        if: ${{ github.event.inputs.SUFFIX != '' }}
+      # 自定义内核后缀
+      - name: 设置自定义内核后缀
+        if: ${{ github.event.inputs.内核后缀 != '' }}
         run: |
           cd 内核工作区
-          后缀="${{ github.event.inputs.SUFFIX }}"
+          后缀="${{ github.event.inputs.内核后缀 }}"
           内核安卓版本="${{ env.内核安卓版本 }}"
-          极速构建="${{ github.event.inputs.FAST_BUILD }}"
+          极速构建="${{ github.event.inputs.极速构建 }}"
 
           for 路径 in \
             kernel_platform/common/scripts/setlocalversion \
@@ -425,7 +398,7 @@ jobs:
             elif grep -q 'echo "\$res"' "$路径"; then
               echo "检测到旧版setlocalversion格式"
               if [ "$极速构建" = "true" ]; then
-                echo "极速构建启用: 使用静态res"
+                echo "极速构建已启用: 使用静态res"
                 sed -i "s/^res=.*/res=\"-${内核安卓版本}-${后缀}\"/" "$路径"
               else
                 echo "标准构建: 通过cut/echo注入后缀"
@@ -446,15 +419,15 @@ jobs:
           git add -A
           git commit -m "自定义后缀 & 移除-dirty"
 
-      # 步骤16: 随机内核后缀（如果未设置后缀）
-      - name: 随机内核后缀
-        if: ${{ github.event.inputs.SUFFIX == '' }}
+      # 伪官方格式的随机后缀（仅在内核后缀未设置时生效）
+      - name: 设置随机内核后缀
+        if: ${{ github.event.inputs.内核后缀 == '' }}
         run: |
           cd 内核工作区
           内核安卓版本="${{ env.内核安卓版本 }}"
-          极速构建="${{ github.event.inputs.FAST_BUILD }}"
+          极速构建="${{ github.event.inputs.极速构建 }}"
 
-          # 生成随机数字和哈希
+          # 生成随机数字和随机哈希
           随机数字=$(od -An -N1 -tu1 < /dev/urandom | tr -d '[:space:]' | awk '{print $1 % 11}')
           随机哈希=$(od -An -N7 -tx1 /dev/urandom | tr -d ' \n')
           随机后缀="${随机数字}-o-g${随机哈希}"
@@ -479,7 +452,7 @@ jobs:
             elif grep -q 'echo "\$res"' "$路径"; then
               echo "检测到旧版setlocalversion格式"
               if [ "$极速构建" = "true" ]; then
-                echo "极速构建启用: 使用带随机后缀的静态res"
+                echo "极速构建已启用: 使用带随机后缀的静态res"
                 sed -i "s/^res=.*/res=\"-${内核安卓版本}-${随机后缀}\"/" "$路径"
               else
                 echo "标准构建: 通过cut/echo注入随机后缀"
@@ -496,58 +469,55 @@ jobs:
           git add -A
           git commit -m "随机后缀 & 移除-dirty"
 
-      # 步骤17: 添加SukiSU Ultra
       - name: 添加SukiSU Ultra
         run: |
           cd 内核工作区/kernel_platform
 
-          元数据="${{ github.event.inputs.KSU_META }}"
+          元数据="${{ github.event.inputs.分支和版本设置 }}"
 
-          # 检查格式
+          # 必须包含两个分隔符（至少三个字段）
           if [[ "$(grep -o '/' <<< "$元数据" | wc -l)" -lt 2 ]]; then
-            echo "错误: KSU_META 参数缺少必要的分隔符 '/'，格式应为: 分支名/自定义标识(可省略)/提交hash(可省略)"
+            echo "错误: 分支和版本设置参数缺少必要的分隔符 '/'，格式应为: 分支名/自定义标识(可省略)/提交hash(可省略)"
             exit 10
           fi
 
-          # 解析字段
-          IFS='/' read -r 分支名 自定义标识 手动哈希 <<< "$元数据"
+          # 解析字段：分支 / 自定义标识 / 手动hash
+          IFS='/' read -r 分支名称 自定义标签 手动哈希 <<< "$元数据"
 
-          echo "分支名: $分支名"
-          [[ -n "$自定义标识" ]] && echo "自定义版本标识: $自定义标识" || echo "自定义版本标识: 未启用"
+          echo "分支名: $分支名称"
+          [[ -n "$自定义标签" ]] && echo "自定义版本标识: $自定义标签" || echo "自定义版本标识: 未启用"
           [[ -n "$手动哈希" ]] && echo "手动指定hash: $手动哈希" || echo "手动指定hash: 未启用"
 
-          # 安装KernelSU
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$分支名"
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$分支名称"
           cd ./KernelSU
 
-          # 如果指定了手动hash，切换到该提交
+          # 如果指定了手动hash，就切换到该提交
           if [[ -n "$手动哈希" ]]; then
-            git fetch origin "$分支名" --depth=50
+            git fetch origin "$分支名称" --depth=50
             git checkout "$手动哈希"
             短哈希=${手动哈希:0:8}
           fi
 
-          # 获取KSU API版本
-          KSU_API版本=$(curl -fsSL "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$分支名/kernel/Makefile" | \
+          内核SU_API版本=$(curl -fsSL "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/$分支名称/kernel/Makefile" | \
             grep -m1 "KSU_VERSION_API :=" | awk -F'= ' '{print $2}' | tr -d '[:space:]')
-          if [[ -z "$KSU_API版本" || "$(printf '%s\n' "$KSU_API版本" "3.1.7" | sort -V | head -n1)" != "3.1.7" ]]; then
-            KSU_API版本="3.1.7"
+          if [[ -z "$内核SU_API版本" || "$(printf '%s\n' "$内核SU_API版本" "3.1.7" | sort -V | head -n1)" != "3.1.7" ]]; then
+            内核SU_API版本="3.1.7"
           fi
-          echo "KSU_API版本=$KSU_API版本" >> $GITHUB_ENV
+          echo "内核SU_API版本=$内核SU_API版本" >> $GITHUB_ENV
 
-          Git哈希=$(git rev-parse --short HEAD)
-          echo "Git哈希=$Git哈希"
+          GIT哈希=$(git rev-parse --short HEAD)
+          echo "GIT哈希=$GIT哈希"
 
           # 组装版本号
           if [[ -n "$手动哈希" ]]; then
-            使用哈希="$短哈希"
+            使用的哈希="$短哈希"
           else
-            使用哈希="$Git哈希"
+            使用的哈希="$GIT哈希"
           fi
-          if [[ -z "$自定义标识" ]]; then
-            完整版本="v$KSU_API版本-$使用哈希@$分支名"
+          if [[ -z "$自定义标签" ]]; then
+            完整版本="v$内核SU_API版本-$使用的哈希@$分支名称"
           else
-            完整版本="v$KSU_API版本-$自定义标识@$分支名[$使用哈希]"
+            完整版本="v$内核SU_API版本-$自定义标签@$分支名称[$使用的哈希]"
           fi
 
           # 清理并写入Makefile版本信息
@@ -560,29 +530,28 @@ jobs:
             $完整版本
             endef
 
-            KSU_VERSION_API := $KSU_API版本
+            KSU_VERSION_API := $内核SU_API版本
             KSU_VERSION_FULL := $完整版本
           EOF
           )
 
           awk -v 定义="$版本定义" '
-            /REPO_OWNER :=/ {print; print 定义; 已插入=1; next}
+            /REPO_OWNER :=/ {print; print 定义; inserted=1; next}
             1
-            END {if (!已插入) print 定义}
+            END {if (!inserted) print 定义}
           ' kernel/Makefile > kernel/Makefile.tmp && mv kernel/Makefile.tmp kernel/Makefile
 
-          KSU版本=$(expr $(git rev-list --count main 2>/dev/null || echo 13000) + 37185)
-          echo "KSU版本=$KSU版本" >> $GITHUB_ENV
+          内核SU版本=$(expr $(git rev-list --count main 2>/dev/null || echo 13000) + 37185)
+          echo "内核SU版本=$内核SU版本" >> $GITHUB_ENV
 
-          echo "::group::最终Makefile版本信息预览"
+          echo "::group::最终Makefile中版本信息及部分调试结果预览"
           grep -A10 "REPO_OWNER" kernel/Makefile
           grep "KSU_VERSION_FULL" kernel/Makefile
           echo "::endgroup::"
 
-      # 步骤18: 应用补丁
       - name: 应用SukiSU Ultra补丁
         env:
-          文件: ${{ github.event.inputs.FILE }}
+          配置文件: ${{ github.event.inputs.配置文件 }}
         run: |
           cd 内核工作区
           git clone https://gitlab.com/simonpunk/susfs4ksu.git -b gki-${{ env.内核安卓版本 }}-${{ env.内核版本 }}
@@ -594,7 +563,7 @@ jobs:
           cp ../susfs4ksu/kernel_patches/fs/* ./common/fs/
           cp ../susfs4ksu/kernel_patches/include/linux/* ./common/include/linux/
 
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+          if [ "${{ github.event.inputs.ZRAM算法 }}" = "true" ]; then
             echo "正在拉取zram补丁"
             cp -r ../SukiSU_patch/other/zram/lz4k/include/linux/* ./common/include/linux/
             cp -r ../SukiSU_patch/other/zram/lz4k/lib/* ./common/lib/
@@ -603,41 +572,41 @@ jobs:
           fi
 
           cd ./common
-          GKI版本="${{ env.内核安卓版本 }}-${{ env.内核版本 }}"
+          通用内核接口版本="${{ env.内核安卓版本 }}-${{ env.内核版本 }}"
           子级别=$(grep '^SUBLEVEL *=' Makefile | head -n1 | cut -d= -f2 | tr -d ' ')
 
-          if [ "$GKI版本" == "android13-5.15" ] && [ "$子级别" -lt 123 ]; then
+          if [ "$通用内核接口版本" == "android13-5.15" ] && [ "$子级别" -lt 123 ]; then
             echo "修复内核版本5.15.0到5.15.123仅支持旧版C库造成的一些bug"
             cp ../../Action-Build/patches/fix_5.15.legacy ./fix_5.15.legacy.patch
             patch -p1 < fix_5.15.legacy.patch
             echo "5.15修复补丁完成"
           fi
-          信任存在="false"
+          信任系统存在="false"
           if [[ "${{ env.内核版本 }}" == "6.6" ]]; then
-            if grep -q 'common-modules/trusty' "$GITHUB_WORKSPACE/.repo/manifests_fallback/${文件}.xml"; then
-              信任存在="true"
+            if grep -q 'common-modules/trusty' "$GITHUB_WORKSPACE/.repo/manifests_fallback/${配置文件}.xml"; then
+              信任系统存在="true"
             fi
-            echo "信任存在=$信任存在" >> $GITHUB_OUTPUT
+            echo "信任系统存在=$信任系统存在" >> $GITHUB_OUTPUT
 
-            if [[ "$信任存在" == "false" && "$(printf '%s\n' "${{ env.完整内核版本 }}" "6.6.30" | sort -V | head -n1)" = "${{ env.完整内核版本 }}" ]]; then
+            if [[ "$信任系统存在" == "false" && "$(printf '%s\n' "${{ env.完整内核版本 }}" "6.6.30" | sort -V | head -n1)" = "${{ env.完整内核版本 }}" ]]; then
               echo "修复内核版本6.6部分机型缺失Trusty OS导致的susfs报错"
               sed -i 's/-32,12 +32,38/-32,11 +32,37/g' 50_add_susfs_in_gki-${{ env.内核安卓版本 }}-${{ env.内核版本 }}.patch
               sed -i '/#include <trace\/hooks\/fs.h>/d' 50_add_susfs_in_gki-${{ env.内核安卓版本 }}-${{ env.内核版本 }}.patch
             fi
           fi
           # 伪补丁修复失败
-          伪补丁=0
-          if [ "$GKI版本" = "android15-6.6" ]; then
+          伪补丁标记=0
+          if [ "$通用内核接口版本" = "android15-6.6" ]; then
             if ! grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
               echo "未找到nr_subpages，正在进行补丁修复"
               sed -i -e '/int ret = 0, copied = 0;/a \\tunsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;' -e '/int ret = 0, copied = 0;/a \\tpagemap_entry_t \*res = NULL;' ./fs/proc/task_mmu.c
-              伪补丁=1
+              伪补丁标记=1
             fi
           fi
-          if [ "$GKI版本" = "android12-5.10" ] || [ "$GKI版本" = "android13-5.15" ]; then
+          if [ "$通用内核接口版本" = "android12-5.10" ] || [ "$通用内核接口版本" = "android13-5.15" ]; then
             if ! grep -qxF $'\tif (!vma_pages(vma))' ./fs/proc/task_mmu.c; then
               echo "未找到vma_pages，正在进行补丁修复"
-              伪补丁=1
+              伪补丁标记=1
             fi
           fi
 
@@ -645,21 +614,20 @@ jobs:
           patch -p1 < 50_add_susfs_in_gki-${{ env.内核安卓版本 }}-${{ env.内核版本 }}.patch || true
           echo "susfs补丁完成"
 
-          # 恢复伪补丁
-          if [ "$伪补丁" = 1 ]; then
-            if [ "$GKI版本" = "android15-6.6" ]; then
+          # 恢复
+          if [ "$伪补丁标记" = 1 ]; then
+            if [ "$通用内核接口版本" = "android15-6.6" ]; then
               if grep -qxF $'\tunsigned int nr_subpages = __PAGE_SIZE / PAGE_SIZE;' ./fs/proc/task_mmu.c; then
                 sed -i -e '/unsigned int nr_subpages \= __PAGE_SIZE \/ PAGE_SIZE;/d' -e '/pagemap_entry_t \*res = NULL;/d' ./fs/proc/task_mmu.c
               fi
             fi
-            if [ "$GKI版本" = "android12-5.10" ] || [ "$GKI版本" = "android13-5.15" ]; then
+            if [ "$通用内核接口版本" = "android12-5.10" ] || [ "$通用内核接口版本" = "android13-5.15" ]; then
               if grep -qxF $'\t\tgoto show_pad;' ./fs/proc/task_mmu.c; then
                 sed -i -e 's/goto show_pad;/return 0;/' ./fs/proc/task_mmu.c
               fi
             fi
           fi
 
-      # 步骤19: 应用隐藏应用补丁
       - name: 应用隐藏应用补丁
         run: |
           cd 内核工作区/kernel_platform/common
@@ -668,9 +636,9 @@ jobs:
           patch -p1 -F 3 < 69_hide_stuff.patch
           echo "隐藏应用补丁完成"
 
-      # 步骤20: OGKI转GKI转换
-      - name: OGKI转GKI转换
-        if: fromJson(env.内核版本) >= 6.6 && github.event.inputs.SCHED == 'false'
+      # OGKI转换GKI，无需修改dtbo开机
+      - name: 应用OGKI到GKI转换补丁
+        if: fromJson(env.内核版本) >= 6.6 && github.event.inputs.风驰驱动 == 'false'
         run: |
           cd 内核工作区/kernel_platform/common
           if [ -d "./kernel/sched/hmbird*" ] || [ -d "./vendor/oplus/kernel/cpu/sched_ext/hmbird*" ]; then
@@ -683,9 +651,8 @@ jobs:
           patch -p1 -F 3 < hmbird_patch.patch
           echo "OGKI转换GKI补丁完成"
 
-      # 步骤21: 应用ZRAM补丁
       - name: 应用ZRAM补丁
-        if: ${{ github.event.inputs.ZRAM == 'true' }}
+        if: ${{ github.event.inputs.ZRAM算法 == 'true' }}
         run: |
           cd 内核工作区/kernel_platform/common
           cp ../../SukiSU_patch/other/zram/zram_patch/${{ env.内核版本 }}/lz4kd.patch ./
@@ -697,37 +664,35 @@ jobs:
           patch -p1 -F 3 < lz4k_oplus.patch || true
           echo 'lz4k_oplus补丁完成'
 
-      # 步骤22: 应用风驰调度器补丁
-      - name: 应用风驰调度器补丁
+      - name: 应用风驰驱动补丁
         env:
-          文件: ${{ github.event.inputs.FILE }}
-        if: ${{ github.event.inputs.SCHED == 'true' }}
+          配置文件: ${{ github.event.inputs.配置文件 }}
+        if: ${{ github.event.inputs.风驰驱动 == 'true' }}
         run: |
           cd 内核工作区/kernel_platform/common
-          git clone https://github.com/Numbersf/SCHED_PATCH.git -b $CPU
+          git clone https://github.com/Numbersf/SCHED_PATCH.git -b $CPU类型
           echo "正在拉取风驰补丁"
-          cp ./SCHED_PATCH/fengchi_${文件}.patch ./
-          if [[ -f "fengchi_${文件}.patch" ]]; then
+          cp ./SCHED_PATCH/fengchi_${配置文件}.patch ./
+          if [[ -f "fengchi_${配置文件}.patch" ]]; then
             echo "正在打风驰补丁"
-            dos2unix "fengchi_${文件}.patch"
-            patch -p1 -F 3 < "fengchi_${文件}.patch"
+            dos2unix "fengchi_${配置文件}.patch"
+            patch -p1 -F 3 < "fengchi_${配置文件}.patch"
             echo "风驰补丁完成"
           else
             echo "❌ 未匹配到补丁，风驰内核暂未支持你的机型，请关闭后重试"
             exit 11
           fi
 
-      # 步骤23: 应用基带保护模块
-      - name: 应用基带保护模块
-        if: ${{ github.event.inputs.LSM == 'true' }}
+      - name: 应用LSM基带保护
+        if: ${{ github.event.inputs.分区保护 == 'true' }}
         run: |
           cd 内核工作区/kernel_platform/common
           echo "正在启用内核级基带保护支持…"
           curl -LSs https://raw.githubusercontent.com/vc-teahouse/Baseband-guard/main/setup.sh | bash
           sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/lockdown/lockdown,baseband_guard/ } }' ./security/Kconfig
 
-      # 步骤24: 配置内核选项
-      - name: 配置内核选项
+      # 配置信息，带*为附加项目，具有一定危险性和不确定性
+      - name: 添加配置设置
         run: |
           cd 内核工作区/kernel_platform/common
           配置文件=./arch/arm64/configs/gki_defconfig
@@ -751,11 +716,11 @@ jobs:
           echo "CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y" >> "$配置文件"
           echo "CONFIG_KSU_SUSFS_OPEN_REDIRECT=y" >> "$配置文件"
 
-          # TMPFS配置
+          # TMPFS配置*
           echo "CONFIG_TMPFS_XATTR=y" >> "$配置文件"
           echo "CONFIG_TMPFS_POSIX_ACL=y" >> "$配置文件"
 
-          # BBR配置
+          # BBR配置*
           echo "CONFIG_TCP_CONG_ADVANCED=y" >> "$配置文件"
           echo "CONFIG_TCP_CONG_BBR=y" >> "$配置文件"
           echo "CONFIG_NET_SCH_FQ=y" >> "$配置文件"
@@ -763,14 +728,14 @@ jobs:
           echo "CONFIG_TCP_CONG_WESTWOOD=n" >> "$配置文件"
           echo "CONFIG_TCP_CONG_HTCP=n" >> "$配置文件"
 
-          # ECN配置
+          # ECN配置*
           echo "CONFIG_IP_ECN=y" >> "$配置文件"
           echo "CONFIG_TCP_ECN=y" >> "$配置文件"
           echo "CONFIG_IPV6_ECN=y" >> "$配置文件"
           echo "CONFIG_IP_NF_TARGET_ECN=y" >> "$配置文件"
 
-          # ZRAM配置
-          if [ "${{ github.event.inputs.ZRAM }}" = "true" ]; then
+          # ZRAM配置*
+          if [ "${{ github.event.inputs.ZRAM算法 }}" = "true" ]; then
             echo "CONFIG_CRYPTO_LZ4HC=y" >> "$配置文件"
             echo "CONFIG_CRYPTO_LZ4K=y" >> "$配置文件"
             echo "CONFIG_CRYPTO_LZ4KD=y" >> "$配置文件"
@@ -779,13 +744,13 @@ jobs:
             echo "CONFIG_ZRAM_WRITEBACK=y" >> "$配置文件"
           fi
 
-          # LSM配置
-          if [ "${{ github.event.inputs.LSM }}" = "true" ]; then
+          # LSM配置*
+          if [ "${{ github.event.inputs.分区保护 }}" = "true" ]; then
             echo "CONFIG_BBG=y" >> "$配置文件"
           fi
 
-          # IPSET & IPv6_NAT配置
-          if [[ "${CPU}" == sm* ]]; then
+          # IPSET & IPv6_NAT配置*
+          if [[ "${CPU类型}" == sm* ]]; then
             echo "CONFIG_BPF_STREAM_PARSER=y" >> "$配置文件"
             echo "CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y" >> "$配置文件"
             echo "CONFIG_NETFILTER_XT_SET=y" >> "$配置文件"
@@ -814,23 +779,22 @@ jobs:
           # 移除构建审查
           sed -i 's/check_defconfig//' ./build.config.gki
 
-      # 步骤25: 修复IPv6 NAT错误
-      - name: 修复IPv6 NAT错误
+      - name: 修复IPv6_NAT错误
         run: |
           cd 内核工作区/kernel_platform/common
-          if [[ "${CPU}" == sm* ]]; then
+          if [[ "${CPU类型}" == sm* ]]; then
             echo "修复启用IPv6 NAT后可能出现的设备误报…"
             cp ../../Action-Build/patches/IPv6_NAT_FIX.patch ./IPv6_NAT_FIX.patch
             patch -p1 -F 3 < IPv6_NAT_FIX.patch
           else
-            echo "你的设备不支持 IPv6 NAT，跳过此步骤。"
+            echo "你的设备不支持IPv6 NAT，跳过此步骤。"
           fi
 
-      # 步骤26: 自定义构建时间
+      # 自定义内核构建时间，不要加入#1 SMP PREEMPT
       - name: 自定义构建时间
         shell: bash
         run: |
-          输入时间="${{ github.event.inputs.BUILD_TIME }}"
+          输入时间="${{ github.event.inputs.构建时间 }}"
           if [[ -n "$输入时间" && "$输入时间" != "F" && "$输入时间" != "f" ]]; then
             日期字符串="$输入时间"
             echo "使用输入的构建时间: $日期字符串"
@@ -843,7 +807,7 @@ jobs:
           cd 内核工作区/kernel_platform/
           for 文件 in common/scripts/mkcompile_h msm-kernel/scripts/mkcompile_h; do
             if [ -f "$文件" ]; then
-              echo "修补mkcompile_h，构建时间=$日期字符串"
+              echo "使用构建时间=$日期字符串修补mkcompile_h"
               if grep -q 'UTS_VERSION=' "$文件"; then
                 perl -pi -e "s{UTS_VERSION=\"\\\$\\(.*?\\)\"}{UTS_VERSION=\"#1 SMP PREEMPT $日期字符串\"}" "$文件"
               else
@@ -852,9 +816,8 @@ jobs:
             fi
           done
 
-      # 步骤27: 启用ThinLTO优化
-      - name: 启用ThinLTO优化
-        if: ${{ (env.内核版本 == '5.10' || env.内核版本 == '5.15') && github.event.inputs.FAST_BUILD == 'true' }}
+      - name: 为极速构建启用lto=thin
+        if: ${{ (env.内核版本 == '5.10' || env.内核版本 == '5.15') && github.event.inputs.极速构建 == 'true' }}
         run: |
           cd 内核工作区/kernel_platform
           默认配置=./common/arch/arm64/configs/gki_defconfig
@@ -864,9 +827,8 @@ jobs:
           sed -i 's/^CONFIG_LTO_CLANG_NONE=y/CONFIG_LTO_CLANG_THIN=y/' "$默认配置"
           grep -q '^CONFIG_LTO_CLANG_THIN=y' "$默认配置" || echo 'CONFIG_LTO_CLANG_THIN=y' >> "$默认配置"
 
-      # 步骤28: 极速构建内核
       - name: 极速构建内核
-        if: ${{ github.event.inputs.FAST_BUILD == 'true' }}
+        if: ${{ github.event.inputs.极速构建 == 'true' }}
         id: 极速构建
         run: |
           内核版本="${{ env.内核版本 }}"
@@ -880,64 +842,64 @@ jobs:
           fi
 
           # 从build.config.common读取CLANG_PREBUILT_BIN
-          CLANG预构建BIN=$(grep '^CLANG_PREBUILT_BIN=' ./common/build.config.common | cut -d'=' -f2 || true)
-          if [[ -z "$CLANG预构建BIN" ]]; then
+          预编译CLANG路径=$(grep '^CLANG_PREBUILT_BIN=' ./common/build.config.common | cut -d'=' -f2 || true)
+          if [[ -z "$预编译CLANG路径" ]]; then
             echo "⚠️ 在build.config.common中未找到CLANG_PREBUILT_BIN，回退至官方构建脚本"
             echo "回退=true" >> "$GITHUB_OUTPUT"
-            echo "请考虑关闭FAST_BUILD并提交问题"
+            echo "请考虑关闭极速构建并提交问题"
             exit 0
           fi
 
-          # 从CLANG_PREBUILT_BIN提取clang版本
-          if [[ "$CLANG预构建BIN" =~ (clang-r[0-9a-z]+) ]]; then
+          # 优先尝试从CLANG_PREBUILT_BIN提取clang-r版本
+          if [[ "$预编译CLANG路径" =~ (clang-r[0-9a-z]+) ]]; then
             CLANG版本="${BASH_REMATCH[1]}"
           else
-            # 从build.config.constants提取
+            # 如果未匹配到，尝试从build.config.constants提取
             if [[ -f ./common/build.config.constants ]]; then
               CLANG版本=$(grep '^CLANG_VERSION=' ./common/build.config.constants | cut -d'=' -f2 || true)
             fi
           fi
 
           if [[ -z "$CLANG版本" ]]; then
-            echo "⚠️ 未能获取到Clang版本，回退至官方构建脚本"
+            echo "⚠️ 未能从CLANG_PREBUILT_BIN或build.config.constants获取到Clang版本，回退至官方构建脚本"
             echo "回退=true" >> "$GITHUB_OUTPUT"
-            echo "请考虑关闭FAST_BUILD并提交问题"
+            echo "请考虑关闭极速构建并提交问题"
             exit 0
           fi
 
-          # 替换CLANG_VERSION变量
-          CLANG预构建BIN=${CLANG预构建BIN/\$\{CLANG_VERSION\}/$CLANG版本}
-          # 获取目录信息
-          CLANG目录=$(echo "$CLANG预构建BIN" | cut -d'/' -f1)
-          CLANG路径=$(basename "$(dirname "$CLANG预构建BIN")")
+          # 替换成新的CLANG_VERSION值
+          预编译CLANG路径=${预编译CLANG路径/\$\{CLANG_VERSION\}/$CLANG版本}
+          # 获取CLANG_PREBUILT_BIN的第一个目录名，赋值给CLANG目录
+          CLANG目录=$(echo "$预编译CLANG路径" | cut -d'/' -f1)
+          # 获取CLANG_PREBUILT_BIN的上一级目录名，赋值给CLANG路径
+          CLANG路径=$(basename "$(dirname "$预编译CLANG路径")")
 
           echo "✅ CLANG版本=$CLANG版本"
           echo "✅ CLANG目录=$CLANG目录"
           echo "✅ CLANG路径=$CLANG路径"
           echo "✅ 使用LLVM_IAS=$使用LLVM_IAS"
 
-          export PATH="$GITHUB_WORKSPACE/内核工作区/kernel_platform/$CLANG预构建BIN:$PATH"
+          export PATH="$GITHUB_WORKSPACE/内核工作区/kernel_platform/$预编译CLANG路径:$PATH"
           export PATH="/usr/lib/ccache:$PATH"
           export CC="ccache clang"
           sudo apt install -y libelf-dev ccache
 
           cd ./common
-          构建参数="LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+          编译参数="LLVM=1 ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
             RUSTC=../../prebuilts/rust/linux-x86/1.73.0b/bin/rustc \
             PAHOLE=../../prebuilts/kernel-build-tools/linux-x86/bin/pahole \
             LD=ld.lld HOSTLD=ld.lld KCFLAGS+=-Wno-error"
 
           if [[ "$使用LLVM_IAS" == "true" ]]; then
-            构建参数="LLVM_IAS=1 $构建参数"
+            编译参数="LLVM_IAS=1 $编译参数"
           fi
 
-          make -j$(nproc --all) O=out $构建参数 gki_defconfig
-          make -j$(nproc --all) O=out $构建参数
+          make -j$(nproc --all) O=out $编译参数 gki_defconfig
+          make -j$(nproc --all) O=out $编译参数
           ccache -s
 
-      # 步骤29: 回退到标准构建
-      - name: 回退到标准构建
-        if: ${{ github.event.inputs.FAST_BUILD == 'false' || steps.极速构建.outputs.回退 == 'true' }}
+      - name: 回退到标准内核构建
+        if: ${{ github.event.inputs.极速构建 == 'false' || steps.极速构建.outputs.回退 == 'true' }}
         run: |
           cd 内核工作区
           if [ -f ./kernel_platform/build_with_bazel.py ]; then
@@ -948,8 +910,7 @@ jobs:
             ./kernel_platform/oplus/build/oplus_build_kernel.sh ${{ env.CPUD }} ${{ env.构建方法 }}
           fi
 
-      # 步骤30: 制作AnyKernel3刷机包
-      - name: 制作AnyKernel3刷机包
+      - name: 制作AnyKernel3包
         run: |
           git clone https://github.com/Numbersf/AnyKernel3 --depth=1
           rm -rf ./AnyKernel3/.git
@@ -975,7 +936,7 @@ jobs:
             cp "$镜像路径" ./AnyKernel3/Image
             cp "$镜像路径" 内核工作区/kernel_platform/out/最终镜像查找/Image
           fi
-          if [ -n "$目录2" ] && [ "${{ env.CPU }}" = "sm8750" ] && [ "${{ github.event.inputs.FAST_BUILD }}" = "false" ]; then
+          if [ -n "$目录2" ] && [ "${{ env.CPU类型 }}" = "sm8750" ] && [ "${{ github.event.inputs.极速构建 }}" = "false" ]; then
             echo "当前正在使用官方脚本构建sm8750，需额外复制一些其它镜像文件：dtbo.img、system_dlkm.img。请注意，如果你在刷完官方脚本构建后想换成极速构建，请还原这些分区！"
             echo "You are currently building sm8750 with the official script. Additional image files will be copied: dtbo.img, system_dlkm.img. Please note: If you switch to fast build after flashing this build, make sure to restore these partitions!"
             for 文件 in dtbo.img system_dlkm.erofs.img; do
@@ -986,14 +947,13 @@ jobs:
                 fi
                 cp "$目录2$文件" "./AnyKernel3/$目标名称"
               else
-                echo "$文件 不存在，跳过复制"
+                echo "$文件不存在，跳过复制"
               fi
             done
           fi
 
-      # 步骤31: 应用KPM补丁
-      - name: 应用KPM补丁
-        if: ${{ github.event.inputs.KPM == 'true' }}
+      - name: 应用patch_linux并替换Image
+        if: ${{ github.event.inputs.内核模块 == 'true' }}
         run: |
           cd 内核工作区/kernel_platform/common
           cp ../../SukiSU_patch/kpm/patch_linux ../out/最终镜像查找/
@@ -1004,75 +964,69 @@ jobs:
           mv oImage Image
           cp Image $GITHUB_WORKSPACE/AnyKernel3/Image
 
-      # 步骤32: 从CI下载SUSFS模块
-      - name: 从CI下载SUSFS模块
-        if: ${{ github.event.inputs.SUSFS_CI == 'CI' }}
+      - name: 从CI下载最新SUSFS模块
+        if: ${{ github.event.inputs.SUSFS模块下载方式 == 'CI' }}
         continue-on-error: true
         run: |
           最新运行ID=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs?status=success" | \
             jq -r '.workflow_runs[] | select(.head_branch == "v1.5.2+") | .id' | head -n 1)
           if [ -z "$最新运行ID" ]; then
-            echo "在分支v1.5.2+中未找到成功的运行"
+            echo "分支v1.5.2+没有找到成功的运行"
           else
-            构件URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            制品下载URL=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
               "https://api.github.com/repos/sidex15/susfs4ksu-module/actions/runs/$最新运行ID/artifacts" | jq -r '.artifacts[0].archive_download_url')
-            if [ -n "$构件URL" ]; then
-              curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o ksu_module_susfs_1.5.2+_CI.zip "$构件URL"
+            if [ -n "$制品下载URL" ]; then
+              curl -L -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -o ksu_module_susfs_1.5.2+_CI.zip "$制品下载URL"
               cp ksu_module_susfs_1.5.2+_CI.zip ./AnyKernel3/
             else
-              echo "获取构件URL失败"
+              echo "获取制品下载URL失败"
             fi
           fi
 
-      # 步骤33: 从Release下载SUSFS模块
-      - name: 从Release下载SUSFS模块
-        if: ${{ github.event.inputs.SUSFS_CI == 'Release' }}
+      - name: 从Release下载最新SUSFS模块
+        if: ${{ github.event.inputs.SUSFS模块下载方式 == 'Release' }}
         continue-on-error: true
         run: |
           wget -O ksu_module_susfs_1.5.2+_Release.zip https://github.com/sidex15/ksu_module_susfs/releases/latest/download/ksu_module_susfs_1.5.2+.zip
           cp ksu_module_susfs_1.5.2+_Release.zip ./AnyKernel3/
 
-      # 步骤34: 下载SukiSU-Ultra APK
-      - name: 下载SukiSU-Ultra APK
+      - name: 从CI下载最新SukiSU-Ultra APK
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          运行id=$(gh api \
+          运行ID=$(gh api \
             "repos/SukiSU-Ultra/SukiSU-Ultra/actions/workflows/build-manager.yml/runs?branch=main&status=success&per_page=1" \
             --jq '.workflow_runs[0].id' || echo "")
-          if [[ -z "$运行id" ]]; then
-            echo "未找到成功的工作流运行，跳过构件下载"
+          if [[ -z "$运行ID" ]]; then
+            echo "没有找到成功的工作流运行。跳过制品下载。"
           else
-            构件url=$(gh api \
-              "repos/SukiSU-Ultra/SukiSU-Ultra/actions/runs/$运行id/artifacts" | \
+            制品URL=$(gh api \
+              "repos/SukiSU-Ultra/SukiSU-Ultra/actions/runs/$运行ID/artifacts" | \
               jq -r '.artifacts[] | select(.name == "Manager") | .archive_download_url' | head -n1)
-            if [[ -z "$构件url" ]]; then
-              echo "在运行$运行id中未找到'Manager'构件，跳过下载"
+            if [[ -z "$制品URL" ]]; then
+              echo "在运行$运行ID中没有找到'Manager'制品。跳过下载。"
             else
-              echo "下载来源: $构件url"
-              curl -fL -H "Authorization: token $GITHUB_TOKEN" -o Manager.zip "$构件url"
+              echo "从以下地址下载: $制品URL"
+              curl -fL -H "Authorization: token $GITHUB_TOKEN" -o Manager.zip "$制品URL"
               unzip -j Manager.zip "*.apk" -d ./AnyKernel3/
             fi
           fi
 
-      # 步骤35: 设置ZIP包后缀
-      - name: 设置ZIP包后缀
+      - name: 设置压缩包后缀
         id: 后缀
         run: |
-          echo "value=${{ github.event.inputs.ZRAM == 'true' && '_LZ4KD' || '' }}${{ github.event.inputs.KPM == 'true' && '_KPM' || '' }}${{ github.event.inputs.LSM == 'true' && '_LSM' || '' }}_ILH${{ github.event.inputs.SCHED== 'true' && '_SCHED' || '' }}" >> $GITHUB_OUTPUT
+          echo "value=${{ github.event.inputs.ZRAM算法 == 'true' && '_LZ4KD' || '' }}${{ github.event.inputs.内核模块 == 'true' && '_KPM' || '' }}${{ github.event.inputs.分区保护 == 'true' && '_LSM' || '' }}_ILH${{ github.event.inputs.风驰驱动== 'true' && '_SCHED' || '' }}" >> $GITHUB_OUTPUT
 
-      # 步骤36: 上传AnyKernel3刷机包
-      - name: 上传AnyKernel3刷机包
+      - name: 上传AnyKernel3
         uses: actions/upload-artifact@v4
         with:
-          name: AnyKernel3_SukiSUUltra_${{ env.KSU版本 }}_${{ steps.提取信息.outputs.value }}(${{ env.完整内核版本 }})${{ steps.后缀.outputs.value }}
+          name: AnyKernel3_SukiSUUltra_${{ env.内核SU版本 }}_${{ steps.提取信息.outputs.value }}(${{ env.完整内核版本 }})${{ steps.后缀.outputs.value }}
           path: ./AnyKernel3/*
 
-      # 步骤37: 下载并解压ZRAM模块
       - name: 下载并解压ZRAM模块
-        if: ${{ github.event.inputs.ZRAM == 'true' }}
+        if: ${{ github.event.inputs.ZRAM算法 == 'true' }}
         id: 查找zram
         run: |
           set -e
@@ -1081,7 +1035,7 @@ jobs:
           重试次数=3
           成功=0
           for i in $(seq 1 $重试次数); do
-            echo "第 $i 次尝试下载..."
+            echo "第$i次尝试下载..."
             下载链接=$(curl -s https://api.github.com/repos/FurLC/ZRAM-Module/releases/latest | \
               grep "browser_download_url" | grep "ZRAM-Module-.*\.zip" | cut -d '"' -f 4 | head -n 1)
 
@@ -1095,7 +1049,7 @@ jobs:
           done
 
           if [ "$成功" -ne 1 ]; then
-            echo "❌ 连续 $重试次数 次尝试后仍然无法获取ZRAM模块下载链接"
+            echo "❌ 连续$重试次数次尝试后仍然无法获取ZRAM模块下载链接"
             echo "上传=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -1129,19 +1083,16 @@ jobs:
             exit 0
           fi
 
-      # 步骤38: 上传ZRAM模块
       - name: 上传ZRAM模块
-        if: ${{ github.event.inputs.ZRAM == 'true' && steps.查找zram.outputs.上传 != 'false' }}
+        if: ${{ github.event.inputs.ZRAM算法 == 'true' && steps.查找zram.outputs.上传 != 'false' }}
         uses: actions/upload-artifact@v4
         with:
           name: ZRAM-Module_${{ env.内核版本 }}_${{ steps.提取信息.outputs.value }}
           path: ZRAM-Module/*
 
-      # 步骤39: 构建后磁盘检查
       - name: 构建后磁盘检查
         run: df -h
 
-      # 步骤40: 清理资源
       - name: 清理资源
         if: always()
         run: |
